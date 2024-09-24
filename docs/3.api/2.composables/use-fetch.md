@@ -145,7 +145,7 @@ If you have not fetched data on the server (for example, with `server: false`), 
 
 ## Type
 
-```ts [Signature]
+```ts twoslash [Signature]
 function useFetch<DataT, ErrorT>(
   url: string | Request | Ref<string | Request> | (() => string) | Request,
   options?: UseFetchOptions<DataT>
