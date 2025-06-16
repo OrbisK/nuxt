@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { NuxtLayout, NuxtPage } from '#components'
+import { NuxtLayout, NuxtLink, NuxtPage } from '#components'
 
 describe('NuxtPage should work with keepalive options', () => {
   let visits = 0
@@ -15,9 +15,11 @@ describe('NuxtPage should work with keepalive options', () => {
       path: '/home',
       component: defineComponent({
         name: 'home',
+        template: `
+          <div>home</div>
+        `,
         setup () {
           visits++
-          return () => h('div', 'home')
         },
       }),
     })
@@ -29,12 +31,32 @@ describe('NuxtPage should work with keepalive options', () => {
   it('should reload setup every time a page is visited, without keepalive', async () => {
     const el = await mountSuspended({
       setup () {
-        return () => h(NuxtLayout, {}, { default: () => h(NuxtPage) })
+        return () => h(NuxtLayout, {}, { default: () => [
+          h(NuxtLink, { to: '/home' }, 'Go to Home'),
+          h(NuxtLink, { to: '/' }, 'Go to /'),
+          h(NuxtPage),
+        ] })
       },
     })
     await navigateTo('/home')
+    expect(el.html()).toMatchInlineSnapshot(`
+      "<a href="/home">Go to Home</a>
+      <a href="/">Go to /</a>
+      <div>home</div>"
+    `)
     await navigateTo('/')
+    expect(el.html()).toMatchInlineSnapshot(`
+      "<a href="/home">Go to Home</a>
+      <a href="/">Go to /</a>
+      <div>catchall</div>"
+    `)
     await navigateTo('/home')
+    expect(el.html()).toMatchInlineSnapshot(`
+      "<a href="/home">Go to Home</a>
+      <a href="/">Go to /</a>
+      <div>home</div>"
+    `)
+
     expect(visits).toBe(2)
     el.unmount()
   })
