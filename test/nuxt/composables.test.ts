@@ -1,14 +1,14 @@
 /// <reference path="../fixtures/basic/.nuxt/nuxt.d.ts" />
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineEventHandler } from 'h3'
+import { defineEventHandler, getQuery } from 'h3'
 import { destr } from 'destr'
+import { Transition, effectScope } from 'vue'
 
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 
 import { hasProtocol, withQuery } from 'ufo'
 import { flushPromises } from '@vue/test-utils'
-import { Transition } from 'vue'
 import { createClientPage } from '../../packages/nuxt/src/components/runtime/client-component'
 import * as composables from '#app/composables'
 
@@ -808,6 +808,46 @@ describe('useFetch', () => {
     await flushPromises()
 
     expect(data.value).toStrictEqual({ count: 0 })
+  })
+
+  it('should update the autokey with `watch: false` and manual `execute()`', async () => {
+    registerEndpoint('/api/key/1', defineEventHandler(event => (getQuery(event))))
+    registerEndpoint('/api/key/2', defineEventHandler(event => (getQuery(event))))
+
+    const createScope = () => {
+      return () => {
+        const id = ref(1)
+        const query = ref({
+          someInput: '',
+        })
+
+        const { data, execute } = useFetch(() => `/api/key/${toValue(id)}`, {
+          query,
+          watch: false,
+          immediate: false,
+        })
+
+        return { data, execute, id, query }
+      }
+    }
+
+    const scope1 = effectScope()
+    const { data: d1, id: i1, query: q1, execute: e1 } = scope1.run(createScope())
+    const scope2 = effectScope()
+    const { data: d2 } = scope2.run(createScope())
+
+    expect.soft(d1.value).toStrictEqual(undefined)
+    expect.soft(d1.value).toStrictEqual(undefined)
+    q1.value.someInput = 'test'
+    i1.value++
+    await e1()
+
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+
+    expect.soft(d1.value).toStrictEqual({ someInput: 'test' })
+    expect.soft(d2.value).toStrictEqual(undefined)
   })
 
   it('should work with reactive keys and immediate: false', async () => {
