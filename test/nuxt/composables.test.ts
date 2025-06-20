@@ -837,7 +837,7 @@ describe('useFetch', () => {
     const { data: d2 } = scope2.run(createScope())
 
     expect.soft(d1.value).toStrictEqual(undefined)
-    expect.soft(d1.value).toStrictEqual(undefined)
+    expect.soft(d2.value).toStrictEqual(undefined)
     q1.value.someInput = 'test'
     i1.value++
     await e1()
@@ -848,6 +848,22 @@ describe('useFetch', () => {
 
     expect.soft(d1.value).toStrictEqual({ someInput: 'test' })
     expect.soft(d2.value).toStrictEqual(undefined)
+
+    const scope3 = effectScope()
+    const { data: d3, id: i3, query: q3, execute: e3 } = scope3.run(createScope())
+    const scope4 = effectScope()
+    const { data: d4, id: i4, query: q4, execute: e4 } = scope4.run(createScope())
+
+    expect.soft(d3.value).toStrictEqual(undefined)
+    expect.soft(d4.value).toStrictEqual(undefined)
+
+    i4.value++
+    q4.value.someInput = 'test4'
+
+    await e4()
+
+    expect.soft(d3.value).toStrictEqual(undefined)
+    expect.soft(d4.value).toStrictEqual({ someInput: 'test4' })
   })
 
   it('should work with reactive keys and immediate: false', async () => {
