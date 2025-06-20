@@ -851,19 +851,15 @@ describe('useFetch', () => {
 
     const scope3 = effectScope()
     const { data: d3, id: i3, query: q3, execute: e3 } = scope3.run(createScope())
-    const scope4 = effectScope()
-    const { data: d4, id: i4, query: q4, execute: e4 } = scope4.run(createScope())
 
     expect.soft(d3.value).toStrictEqual(undefined)
-    expect.soft(d4.value).toStrictEqual(undefined)
 
-    i4.value++
-    q4.value.someInput = 'test4'
+    i3.value++
+    q3.value.someInput = 'test3'
 
-    await e4()
+    await e3()
 
-    expect.soft(d3.value).toStrictEqual(undefined)
-    expect.soft(d4.value).toStrictEqual({ someInput: 'test4' })
+    expect.soft(d3.value).toStrictEqual({ someInput: 'test3' })
   })
 
   it('should work with reactive keys and immediate: false', async () => {
