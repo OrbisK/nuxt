@@ -112,6 +112,8 @@ export interface AsyncDataExecuteOptions {
 
   /** @internal */
   cachedData?: any
+
+  signal?: AbortSignal
 }
 
 export interface _AsyncData<DataT, ErrorT> {
@@ -599,6 +601,7 @@ function createAsyncData<
   nuxtApp.payload._errors[key] ??= undefined
 
   const hasCustomGetCachedData = options.getCachedData !== getDefaultCachedData
+  const abortController = new AbortController()
 
   // When prerendering, share payload data automatically between requests
   const handler = import.meta.client || !import.meta.prerender || !nuxtApp.ssrContext?._sharedPrerenderCache
@@ -657,7 +660,12 @@ function createAsyncData<
       const promise = new Promise<ResT>(
         (resolve, reject) => {
           try {
-            resolve(handler(nuxtApp))
+            opts.signal?.addEventListener('abort', () => {
+              console.log('reject')
+              reject(new Error(opts.signal!.reason)) // todo
+            })
+
+            return Promise.resolve(handler(nuxtApp)).then(resolve, reject)
           } catch (err) {
             reject(err)
           }
