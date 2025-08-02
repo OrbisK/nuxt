@@ -601,7 +601,6 @@ function createAsyncData<
   nuxtApp.payload._errors[key] ??= undefined
 
   const hasCustomGetCachedData = options.getCachedData !== getDefaultCachedData
-  const abortController = new AbortController()
 
   // When prerendering, share payload data automatically between requests
   const handler = import.meta.client || !import.meta.prerender || !nuxtApp.ssrContext?._sharedPrerenderCache
