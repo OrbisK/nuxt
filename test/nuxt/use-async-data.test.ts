@@ -42,6 +42,7 @@ describe('useAsyncData', () => {
     const res = useAsyncData(() => Promise.resolve('test'))
     expect(Object.keys(res).sort()).toMatchInlineSnapshot(`
       [
+        "abort",
         "clear",
         "data",
         "error",
@@ -743,12 +744,11 @@ describe('useAsyncData', () => {
     vi.useRealTimers()
   })
 
-  it('should be cancellable when executing', async () => {
+  it('should be externally cancellable when executing', async () => {
     vi.useFakeTimers()
-    const page = ref('index')
     const controller = new AbortController()
-    const promiseFn = vi.fn(() => new Promise(resolve => setTimeout(() => resolve(page.value), 1000)))
-    const { execute, status } = useAsyncData(() => page.value, promiseFn)
+    const promiseFn = vi.fn(() => new Promise(resolve => setTimeout(() => resolve('index'), 1000)))
+    const { execute, status } = useAsyncData(() => 'index', promiseFn)
     vi.advanceTimersToNextTimer()
     await flushPromises()
     expect(status.value).toBe('success')
@@ -758,5 +758,32 @@ describe('useAsyncData', () => {
     controller.abort('test abort')
     await flushPromises()
     expect(status.value).toBe('error')
+    vi.useRealTimers()
+  })
+
+  it('should be cancellable via abort', async () => {
+    vi.useFakeTimers()
+    const promiseFn = vi.fn(() => new Promise(resolve => setTimeout(() => resolve('index'), 1000)))
+    const { abort, status } = useAsyncData(promiseFn)
+    expect(status.value).toBe('pending')
+    abort()
+    await nextTick()
+    await flushPromises()
+    expect(status.value).toBe('error')
+  })
+
+  it('should abort handler signal', async () => {
+    vi.useFakeTimers()
+    let _signal
+    const promiseFn = vi.fn((_, { signal }) => {
+      _signal = signal
+      new Promise(resolve => setTimeout(() => resolve('index'), 1000))
+    })
+    const { abort, status } = useAsyncData(promiseFn)
+    expect(status.value).toBe('pending')
+    abort()
+    await nextTick()
+    await flushPromises()
+    expect(_signal.aborted).toBe(true)
   })
 })

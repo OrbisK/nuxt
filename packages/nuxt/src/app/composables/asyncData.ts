@@ -98,6 +98,10 @@ export interface AsyncDataOptions<
    * @default 'cancel'
    */
   dedupe?: 'cancel' | 'defer'
+  /**
+   * todo
+   */
+  timeout?: number
 }
 
 export interface AsyncDataExecuteOptions {
@@ -114,6 +118,8 @@ export interface AsyncDataExecuteOptions {
   cachedData?: any
 
   signal?: AbortSignal
+
+  timeout?: number
 }
 
 export interface _AsyncData<DataT, ErrorT> {
@@ -122,6 +128,7 @@ export interface _AsyncData<DataT, ErrorT> {
   refresh: (opts?: AsyncDataExecuteOptions) => Promise<void>
   execute: (opts?: AsyncDataExecuteOptions) => Promise<void>
   clear: () => void
+  abort: () => void
   error: Ref<ErrorT | undefined>
   status: Ref<AsyncDataRequestStatus>
 }
@@ -142,7 +149,7 @@ export function useAsyncData<
   PickKeys extends KeysOf<DataT> = KeysOf<DataT>,
   DefaultT = undefined,
 > (
-  handler: (ctx?: NuxtApp) => Promise<ResT>,
+  handler: (ctx?: NuxtApp, options?: { signal: AbortSignal }) => Promise<ResT>,
   options?: AsyncDataOptions<ResT, DataT, PickKeys, DefaultT>
 ): AsyncData<PickFrom<DataT, PickKeys> | DefaultT, (NuxtErrorDataT extends Error | NuxtError ? NuxtErrorDataT : NuxtError<NuxtErrorDataT>) | undefined>
 export function useAsyncData<
@@ -152,7 +159,7 @@ export function useAsyncData<
   PickKeys extends KeysOf<DataT> = KeysOf<DataT>,
   DefaultT = DataT,
 > (
-  handler: (ctx?: NuxtApp) => Promise<ResT>,
+  handler: (ctx?: NuxtApp, options?: { signal: AbortSignal }) => Promise<ResT>,
   options?: AsyncDataOptions<ResT, DataT, PickKeys, DefaultT>
 ): AsyncData<PickFrom<DataT, PickKeys> | DefaultT, (NuxtErrorDataT extends Error | NuxtError ? NuxtErrorDataT : NuxtError<NuxtErrorDataT>) | undefined>
 /**
@@ -170,7 +177,7 @@ export function useAsyncData<
   DefaultT = undefined,
 > (
   key: MaybeRefOrGetter<string>,
-  handler: (ctx?: NuxtApp) => Promise<ResT>,
+  handler: (ctx?: NuxtApp, options?: { signal: AbortSignal }) => Promise<ResT>,
   options?: AsyncDataOptions<ResT, DataT, PickKeys, DefaultT>
 ): AsyncData<PickFrom<DataT, PickKeys> | DefaultT, (NuxtErrorDataT extends Error | NuxtError ? NuxtErrorDataT : NuxtError<NuxtErrorDataT>) | undefined>
 export function useAsyncData<
@@ -181,7 +188,7 @@ export function useAsyncData<
   DefaultT = DataT,
 > (
   key: MaybeRefOrGetter<string>,
-  handler: (ctx?: NuxtApp) => Promise<ResT>,
+  handler: (ctx?: NuxtApp, options?: { signal: AbortSignal }) => Promise<ResT>,
   options?: AsyncDataOptions<ResT, DataT, PickKeys, DefaultT>
 ): AsyncData<PickFrom<DataT, PickKeys> | DefaultT, (NuxtErrorDataT extends Error | NuxtError ? NuxtErrorDataT : NuxtError<NuxtErrorDataT>) | undefined>
 export function useAsyncData<
@@ -195,7 +202,7 @@ export function useAsyncData<
   if (_isAutoKeyNeeded(args[0], args[1])) { args.unshift(autoKey) }
 
   // eslint-disable-next-line prefer-const
-  let [_key, _handler, options = {}] = args as [string, (ctx?: NuxtApp) => Promise<ResT>, AsyncDataOptions<ResT, DataT, PickKeys, DefaultT>]
+  let [_key, _handler, options = {}] = args as [string, (ctx?: NuxtApp, options?: { signal: AbortSignal }) => Promise<ResT>, AsyncDataOptions<ResT, DataT, PickKeys, DefaultT>]
 
   // Validate arguments
   const key = computed(() => toValue(_key)!)
@@ -367,6 +374,7 @@ export function useAsyncData<
     pending: writableComputedRef(() => nuxtApp._asyncData[key.value]?.pending as Ref<boolean>),
     status: writableComputedRef(() => nuxtApp._asyncData[key.value]?.status as Ref<AsyncDataRequestStatus>),
     error: writableComputedRef(() => nuxtApp._asyncData[key.value]?.error as Ref<NuxtErrorDataT extends Error | NuxtError ? NuxtErrorDataT : NuxtError<NuxtErrorDataT>>),
+    abort: (...args) => nuxtApp._asyncData[key.value]!.abort(...args),
     refresh: (...args) => nuxtApp._asyncData[key.value]!.execute(...args),
     execute: (...args) => nuxtApp._asyncData[key.value]!.execute(...args),
     clear: () => clearNuxtDataByKey(nuxtApp, key.value),
@@ -597,7 +605,7 @@ function createAsyncData<
   DataT = ResT,
   PickKeys extends KeysOf<DataT> = KeysOf<DataT>,
   DefaultT = undefined,
-> (nuxtApp: NuxtApp, key: string, _handler: (ctx?: NuxtApp) => Promise<ResT>, options: AsyncDataOptions<ResT, DataT, PickKeys, DefaultT>, initialCachedData?: NoInfer<DataT>): CreatedAsyncData<ResT, NuxtErrorDataT, DataT, DefaultT> {
+> (nuxtApp: NuxtApp, key: string, _handler: (ctx?: NuxtApp, options?: { signal: AbortSignal }) => Promise<ResT>, options: AsyncDataOptions<ResT, DataT, PickKeys, DefaultT>, initialCachedData?: NoInfer<DataT>): CreatedAsyncData<ResT, NuxtErrorDataT, DataT, DefaultT> {
   nuxtApp.payload._errors[key] ??= undefined
 
   const hasCustomGetCachedData = options.getCachedData !== getDefaultCachedData
@@ -605,12 +613,13 @@ function createAsyncData<
   // When prerendering, share payload data automatically between requests
   const handler = import.meta.client || !import.meta.prerender || !nuxtApp.ssrContext?._sharedPrerenderCache
     ? _handler
-    : () => {
+    : (nuxtApp: NuxtApp, options: { signal: AbortSignal }) => {
         const value = nuxtApp.ssrContext!._sharedPrerenderCache!.get(key)
         if (value) { return value as Promise<ResT> }
 
-        const promise = Promise.resolve().then(() => nuxtApp.runWithContext(() => _handler(nuxtApp)))
+        const promise = Promise.resolve().then(() => nuxtApp.runWithContext(() => _handler(nuxtApp, options)))
 
+        abortController.abort(new DOMException('AsyncData request cancelled by deduplication', 'AbortError'))
         nuxtApp.ssrContext!._sharedPrerenderCache!.set(key, promise)
         return promise
       }
@@ -622,11 +631,18 @@ function createAsyncData<
       await asyncData.execute({ cause: 'refresh:hook' })
     }
   })
+
+  let abortController = new AbortController()
+
   const asyncData: CreatedAsyncData<ResT, NuxtErrorDataT, DataT, DefaultT> = {
     data: _ref(hasCachedData ? initialCachedData : options.default!()) as any,
     pending: pendingWhenIdle ? shallowRef(!hasCachedData) : computed(() => asyncData.status.value === 'pending'),
     error: toRef(nuxtApp.payload._errors, key) as any,
     status: shallowRef('idle'),
+    abort: (reason?: any) => {
+      abortController.abort(reason)
+      abortController = new AbortController() // not sure if this is the right way
+    },
     execute: (...args) => {
       const [_opts, newValue = undefined] = args
       const opts = _opts && newValue === undefined && typeof _opts === 'object' ? _opts : {}
@@ -660,11 +676,13 @@ function createAsyncData<
         (resolve, reject) => {
           try {
             opts.signal?.addEventListener('abort', () => {
-              console.log('reject')
               reject(new Error(opts.signal!.reason)) // todo
             })
-
-            return Promise.resolve(handler(nuxtApp)).then(resolve, reject)
+            abortController.signal.addEventListener('abort', () => {
+              reject(new Error(abortController.signal.reason)) // todo
+            })
+            const timeout = opts.timeout ?? options.timeout
+            return Promise.resolve(handler(nuxtApp, { signal: AbortSignal.any([...(opts?.signal ? [opts.signal] : []), abortController.signal, ...(typeof timeout === 'number' ? [AbortSignal.timeout(timeout)] : [])]) })).then(resolve, reject)
           } catch (err) {
             reject(err)
           }
@@ -752,7 +770,7 @@ const getDefaultCachedData: AsyncDataOptions<any>['getCachedData'] = (key, nuxtA
   }
 }
 
-function createHash (_handler: () => unknown, options: Partial<Record<keyof AsyncDataOptions<any>, unknown>>) {
+function createHash (_handler: (ctx: NuxtApp, options: { signal: AbortSignal }) => unknown, options: Partial<Record<keyof AsyncDataOptions<any>, unknown>>) {
   return {
     handler: hash(_handler),
     transform: options.transform ? hash(options.transform) : undefined,
