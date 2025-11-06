@@ -51,9 +51,12 @@ export function preloadPayload (url: string, opts: LoadPayloadOptions = {}): Pro
         linkEl[key === 'crossorigin' ? 'crossOrigin' : key] = link[key]!
       }
       document.head.appendChild(linkEl)
+      const cleanupController = new AbortController()
       return new Promise<void>((resolve, reject) => {
-        linkEl.addEventListener('load', () => resolve())
-        linkEl.addEventListener('error', () => reject())
+        linkEl.addEventListener('load', () => resolve(), { signal: cleanupController.signal })
+        linkEl.addEventListener('error', () => reject(), { signal: cleanupController.signal })
+      }).finally(() => {
+        cleanupController.abort()
       })
     }
   })
