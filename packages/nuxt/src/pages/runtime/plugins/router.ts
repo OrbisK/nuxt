@@ -1,6 +1,6 @@
 import { isReadonly, reactive, shallowReactive, shallowRef } from 'vue'
 import type { Ref } from 'vue'
-import type { RouteLocationNormalizedLoaded, RouteLocationNormalizedLoadedGeneric, Router, RouterScrollBehavior } from 'vue-router'
+import type { HistoryLocation, RouteLocationNormalizedLoaded, RouteLocationNormalizedLoadedGeneric, Router, RouterScrollBehavior } from 'vue-router'
 import { START_LOCATION, createMemoryHistory, createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { isSamePath, withoutBase } from 'ufo'
 
@@ -58,6 +58,15 @@ const plugin: Plugin<{ router: Router }> = defineNuxtPlugin({
       ? (hashMode ? createWebHashHistory(routerBase) : createWebHistory(routerBase))
       : createMemoryHistory(routerBase)
     )
+    const before = history.createHref
+
+    history.createHref = (location: HistoryLocation): string => {
+      const originalHref = before(location)
+      if (originalHref?.startsWith(`${window.location.pathname}?`) || originalHref?.startsWith(`${window.location.pathname}#`)) {
+        return originalHref.slice(window.location.pathname.length)
+      }
+      return originalHref
+    }
 
     const routes = routerOptions.routes ? await routerOptions.routes(_routes) ?? _routes : _routes
 
