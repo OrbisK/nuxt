@@ -351,10 +351,10 @@ export function defineNuxtLink (options: NuxtLinkOptions) {
       },
     },
     useLink: useNuxtLink,
-    setup (props, { slots }) {
+    setup (props, { slots, attrs }) {
       const router = useRouter()
 
-      const { to, href, navigate, isExternal, hasTarget, isAbsoluteUrl } = useNuxtLink(props)
+      const { to, href, navigate, isExternal, hasTarget, isAbsoluteUrl, isActive, isExactActive } = useNuxtLink(props)
 
       // Prefetching
       const prefetched = shallowRef(false)
@@ -447,11 +447,38 @@ export function defineNuxtLink (options: NuxtLinkOptions) {
             routerLinkProps.rel = props.rel || undefined
           }
 
+          if (props.custom) {
+            return h(
+              resolveComponent('RouterLink'),
+              routerLinkProps,
+              slots.default,
+            )
+          }
+
+          const denormalizeHref = (href: string, to: RouteLocationRaw | undefined) => {
+            const toSimple = typeof to === 'string' ? to : to?.path
+            if (toSimple && (href?.startsWith(`${window.location.pathname}?`) || href?.startsWith(`${window.location.pathname}#`)) && toSimple !== href) {
+              return href.slice(window.location.pathname.length)
+            }
+            return href
+          }
+
           // Internal link
           return h(
             resolveComponent('RouterLink'),
-            routerLinkProps,
-            slots.default,
+            {
+              ...routerLinkProps,
+              custom: true,
+            },
+            { default: () => h('a', {
+              ...attrs,
+              onClick: navigate,
+              href: denormalizeHref(href.value, props.to),
+              class: [attrs, {
+                [props.activeClass ?? '']: isActive,
+                [props.exactActiveClass ?? '']: isExactActive,
+              }],
+            }, { default: slots.default }) },
           )
         }
 
