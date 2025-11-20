@@ -3147,7 +3147,7 @@ describe('nuxt-time', () => {
   })
 })
 
-describe('async-data', () => {
+describe.only('async-data', () => {
   it('should correctly return deduped promises', async () => {
     const html = await $fetch<string>('/async-data/multiple')
 

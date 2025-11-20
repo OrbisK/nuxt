@@ -748,21 +748,30 @@ function createAsyncData<
           asyncData.error.value = undefined
           asyncData.status.value = 'success'
         })
-        .catch((error: any) => {
+        .catch(async (error: any) => {
           // If the promise was replaced by another one, we do not update the asyncData
           if (nuxtApp._asyncDataPromises[key] && nuxtApp._asyncDataPromises[key] !== promise) {
-            return nuxtApp._asyncDataPromises[key]
+            if (opts?.cause === 'initial') {
+              await nuxtApp._asyncDataPromises[key]
+            }
+            return
           }
 
           // If the asyncData was explicitly aborted internally (dedupe or clear), we do not update the asyncData
           if (asyncData._abortController?.signal.aborted) {
-            return nuxtApp._asyncDataPromises[key]
+            if (opts?.cause === 'initial') {
+              await nuxtApp._asyncDataPromises[key]
+            }
+            return
           }
 
           // if the asyncData was explicitly aborted by user, we set it back to idle state
           if (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError') {
             asyncData.status.value = 'idle'
-            return nuxtApp._asyncDataPromises[key]
+            if (opts?.cause === 'initial') {
+              await nuxtApp._asyncDataPromises[key]
+            }
+            return
           }
 
           asyncData.error.value = createError<NuxtErrorDataT>(error) as (NuxtErrorDataT extends Error | NuxtError ? NuxtErrorDataT : NuxtError<NuxtErrorDataT>)
