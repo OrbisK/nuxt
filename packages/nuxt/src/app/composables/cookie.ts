@@ -116,16 +116,33 @@ export const legacyCookieSerializer = {
 // we use globalThis to avoid crashes in web workers
 const store = import.meta.client && cookieStore ? globalThis.cookieStore : undefined
 
+type CookieString = string | null | undefined
+
+type CookieDecoder<T> = (value: string | null | undefined) => T
+
+/**
+ * Restricts a cookie value type `T` to `D`, the type the decoder in use returns, so that a
+ * value can't be typed as something it won't be read back as. Not restricted when `D` is `any` or `unknown`.
+ */
+type DecodedAs<T, D> = unknown extends D ? unknown : [T] extends [D] ? unknown : D
+
+/** Options that bring their own decoder, so any value type can be read back. */
+type WithCookieDecoder<T> = { decode: CookieDecoder<T> } | { $cookie: $Cookie<T> }
+
 /** A `useCookie` composable whose value type defaults to `D`, as returned by `createUseCookie`. */
-export interface UseCookie<D = string | null | undefined> {
-  <T = D> (name: string, opts?: UseCookieOptions<T> & { readonly?: false }): CookieRef<T>
-  <T = D> (name: string, opts: UseCookieOptions<T> & { readonly: true }): Readonly<CookieRef<T>>
+export interface UseCookie<D = CookieString> {
+  <T> (name: string, opts: UseCookieOptions<T> & WithCookieDecoder<T> & { readonly?: false }): CookieRef<T>
+  <T> (name: string, opts: UseCookieOptions<T> & WithCookieDecoder<T> & { readonly: true }): Readonly<CookieRef<T>>
+  <T extends DecodedAs<T, D> = D> (name: string, opts?: UseCookieOptions<T> & { readonly?: false }): CookieRef<T>
+  <T extends DecodedAs<T, D> = D> (name: string, opts: UseCookieOptions<T> & { readonly: true }): Readonly<CookieRef<T>>
 }
 
 /** @since 3.0.0 */
-export function useCookie<T = string | null | undefined> (name: string, _opts?: UseCookieOptions<T> & { readonly?: false }): CookieRef<T>
-export function useCookie<T = string | null | undefined> (name: string, _opts: UseCookieOptions<T> & { readonly: true }): Readonly<CookieRef<T>>
-export function useCookie<T = string | null | undefined> (name: string, _opts?: UseCookieOptions<T>): CookieRef<T> {
+export function useCookie<T> (name: string, _opts: UseCookieOptions<T> & WithCookieDecoder<T> & { readonly?: false }): CookieRef<T>
+export function useCookie<T> (name: string, _opts: UseCookieOptions<T> & WithCookieDecoder<T> & { readonly: true }): Readonly<CookieRef<T>>
+export function useCookie<T extends DecodedAs<T, CookieString> = CookieString> (name: string, _opts?: UseCookieOptions<T> & { readonly?: false }): CookieRef<T>
+export function useCookie<T extends DecodedAs<T, CookieString> = CookieString> (name: string, _opts: UseCookieOptions<T> & { readonly: true }): Readonly<CookieRef<T>>
+export function useCookie<T> (name: string, _opts?: UseCookieOptions<T>): CookieRef<T> {
   const instance: $Cookie<any> = _opts?.$cookie ?? $cookie
   const opts = { watch: true, refresh: false, ...baseCookieOptions, ...instance.options, ..._opts }
   opts.filter ??= key => key === name
@@ -264,7 +281,9 @@ export function useCookie<T = string | null | undefined> (name: string, _opts?: 
  *
  * @since 5.0.0
  */
-export function createUseCookie<D = string | null | undefined> (defaults: UseCookieOptions<D> = {}): UseCookie<D> {
+export function createUseCookie<D> (defaults: UseCookieOptions<D> & WithCookieDecoder<D>): UseCookie<D>
+export function createUseCookie<D extends DecodedAs<D, CookieString> = CookieString> (defaults?: UseCookieOptions<D>): UseCookie<D>
+export function createUseCookie<D> (defaults: UseCookieOptions<D> = {}): UseCookie<D> {
   return ((name: string, opts?: UseCookieOptions) => useCookie(name, { ...defaults, ...opts } as UseCookieOptions & { readonly?: false })) as UseCookie<D>
 }
 
@@ -566,13 +585,16 @@ function cookieServerRef<T> (name: string, value: T | undefined, opts: UseCookie
   })
 }
 
-export interface $Cookie<D = string | null | undefined> {
+export interface $Cookie<D = CookieString> {
   /** The defaults this instance was created with. */
   readonly options: CookieOptions<D>
-  get<T = D> (name: string, opts: CookieOptions<T> & { default: () => T | Ref<T> }): T
-  get<T = D> (name: string, opts?: CookieOptions<T>): T | undefined
+  get<T> (name: string, opts: CookieOptions<T> & { decode: CookieDecoder<T>, default: () => T | Ref<T> }): T
+  get<T> (name: string, opts: CookieOptions<T> & { decode: CookieDecoder<T> }): T | undefined
+  get<T extends DecodedAs<T, D> = D> (name: string, opts: CookieOptions<T> & { default: () => T | Ref<T> }): T
+  get<T extends DecodedAs<T, D> = D> (name: string, opts?: CookieOptions<T>): T | undefined
   /** Read and decode all cookies visible to the current request (server) or document (client). */
-  getAll<T = D> (opts?: CookieOptions<T>): Record<string, T | undefined>
+  getAll<T> (opts: CookieOptions<T> & { decode: CookieDecoder<T> }): Record<string, T | undefined>
+  getAll<T extends DecodedAs<T, D> = D> (opts?: CookieOptions<T>): Record<string, T | undefined>
   has (name: string): boolean
   /** Encode and write a cookie. Setting `null` or `undefined` removes it. */
   set<T = D> (name: string, value: NoInfer<T> | null | undefined, opts?: CookieOptions<T>): void
@@ -583,8 +605,10 @@ export interface $Cookie<D = string | null | undefined> {
    * Returns a function that stops listening, which is also called when the current effect scope
    * is disposed or `signal` is aborted. Does nothing on the server.
    */
-  onChange<T = D> (name: string, callback: (value: T | undefined) => void, opts?: CookieOptions<T> & { signal?: AbortSignal }): () => void
-  create<T = D> (defaults?: CookieOptions<T>): $Cookie<T>
+  onChange<T> (name: string, callback: (value: T | undefined) => void, opts: CookieOptions<T> & { decode: CookieDecoder<T>, signal?: AbortSignal }): () => void
+  onChange<T extends DecodedAs<T, D> = D> (name: string, callback: (value: T | undefined) => void, opts?: CookieOptions<T> & { signal?: AbortSignal }): () => void
+  create<T> (defaults: CookieOptions<T> & { decode: CookieDecoder<T> }): $Cookie<T>
+  create<T extends DecodedAs<T, D> = D> (defaults?: CookieOptions<T>): $Cookie<T>
 }
 
 function readCookieJar (): Record<string, string | undefined> {
@@ -660,7 +684,7 @@ function createCookieUtil (defaults: CookieOptions): $Cookie<any> {
   return {
     options: defaults,
     get: (name: string, opts?: CookieOptions) => read(readCookieJar()[name], opts),
-    getAll (opts) {
+    getAll (opts?: CookieOptions) {
       const jar = readCookieJar()
       const result: Record<string, any> = {}
       for (const name in jar) {
@@ -671,7 +695,7 @@ function createCookieUtil (defaults: CookieOptions): $Cookie<any> {
     has: name => readCookieJar()[name] !== undefined,
     set: (name, value, opts) => write(name, value, opts),
     remove: (name, opts) => write(name, undefined, opts),
-    onChange (name, callback, opts) {
+    onChange (name: string, callback: (value: any) => void, opts?: CookieOptions & { signal?: AbortSignal }) {
       if (!import.meta.client || opts?.signal?.aborted) { return () => {} }
       const { signal, ...options } = opts ?? {}
       const unlisten = listen(name, callback, { ...defaults, ...options })
@@ -683,7 +707,7 @@ function createCookieUtil (defaults: CookieOptions): $Cookie<any> {
       if (getCurrentScope()) { onScopeDispose(stop) }
       return stop
     },
-    create: opts => createCookieUtil({ ...defaults, ...opts }),
+    create: (opts?: CookieOptions) => createCookieUtil({ ...defaults, ...opts }),
   }
 }
 

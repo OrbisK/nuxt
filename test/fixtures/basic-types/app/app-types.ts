@@ -807,9 +807,11 @@ describe('composables', () => {
     expectTypeOf(useState('test', () => ref('hello'))).toEqualTypeOf<Ref<string>>()
     expectTypeOf(useState('test', () => 'hello')).toEqualTypeOf<Ref<string>>()
 
-    expectTypeOf(useCookie('test', { default: () => ref(500) })).toEqualTypeOf<Ref<number>>()
-    expectTypeOf(useCookie('test', { default: () => 500 })).toEqualTypeOf<Ref<number>>()
-    useCookie<number | null>('test').value = null
+    expectTypeOf(useCookie('test', { default: () => ref('500') })).toEqualTypeOf<CookieRef<string>>()
+    expectTypeOf(useCookie('test', { default: () => '500' })).toEqualTypeOf<CookieRef<string>>()
+    expectTypeOf(useCookie('test', { decode: Number, default: () => ref(500) })).toEqualTypeOf<CookieRef<number>>()
+    expectTypeOf(useCookie('test', { decode: Number, default: () => 500 })).toEqualTypeOf<CookieRef<number>>()
+    useCookie<string | null>('test').value = null
 
     expectTypeOf(createUseCookie()('test')).toEqualTypeOf<CookieRef<string | null | undefined>>()
     expectTypeOf(createUseCookie(legacyCookieSerializer)('test')).toEqualTypeOf<CookieRef<any>>()
@@ -820,13 +822,15 @@ describe('composables', () => {
     expectTypeOf(createUseCookie<unknown>(legacyCookieSerializer)('test', { readonly: true })).toEqualTypeOf<Readonly<CookieRef<unknown>>>()
 
     expectTypeOf($cookie.get('test')).toEqualTypeOf<string | null | undefined>()
-    expectTypeOf($cookie.get('test', { default: () => 500 })).toEqualTypeOf<number>()
+    expectTypeOf($cookie.get('test', { default: () => '500' })).toEqualTypeOf<string>()
+    expectTypeOf($cookie.get('test', { decode: Number, default: () => 500 })).toEqualTypeOf<number>()
     expectTypeOf($cookie.create(legacyCookieSerializer).get('test')).toEqualTypeOf<any>()
     const listCookie = $cookie.create({ decode: v => v ? v.split(',') : [], encode: (v: string[]) => v.join(',') })
     expectTypeOf(listCookie.get('test')).toEqualTypeOf<string[] | undefined>()
     expectTypeOf(listCookie.getAll()).toEqualTypeOf<Record<string, string[] | undefined>>()
     expectTypeOf(listCookie.create({ maxAge: 60 }).get('test')).toEqualTypeOf<string[] | undefined>()
-    expectTypeOf(listCookie.get<number>('test')).toEqualTypeOf<number | undefined>()
+    // @ts-expect-error decodes to string[]
+    listCookie.get<number>('test')
     listCookie.onChange('test', value => expectTypeOf(value).toEqualTypeOf<string[] | undefined>())
     expectTypeOf($cookie.onChange('test', () => {})).toEqualTypeOf<() => void>()
     listCookie.set('test', ['a'])
@@ -852,6 +856,46 @@ describe('composables', () => {
 
     expectTypeOf(useFetch('/api/hello', { default: () => ref(500) }).data).toEqualTypeOf<Ref<string | number>>()
     expectTypeOf(useFetch('/api/hello', { default: () => 500 }).data).toEqualTypeOf<Ref<string | number>>()
+  })
+
+  it('only allows non-string cookie values with a matching decode', () => {
+    // @ts-expect-error read back as a string
+    useCookie('test', { default: () => 500 })
+    // @ts-expect-error read back as a string
+    useCookie('test', { default: () => ref(500) })
+    // @ts-expect-error read back as a string
+    useCookie<number>('test')
+    // @ts-expect-error read back as a string
+    useCookie<{ a: number }>('test', { default: () => ({ a: 1 }) })
+    // @ts-expect-error read back as a string
+    useCookie('test', { default: () => 500, readonly: true })
+    // @ts-expect-error read back as a string
+    useCookie('test', { encode: (value: number) => String(value), default: () => 500 })
+    // @ts-expect-error read back as a string
+    useCookie('test', { $cookie: $cookie.create({ maxAge: 60 }), default: () => 500 })
+
+    expectTypeOf(useCookie<'a' | 'b'>('test')).toEqualTypeOf<CookieRef<'a' | 'b'>>()
+    expectTypeOf(useCookie('test', { default: () => '500', readonly: true })).toEqualTypeOf<Readonly<CookieRef<string>>>()
+    expectTypeOf(useCookie('test', { decode: Number, default: () => 500, readonly: true })).toEqualTypeOf<Readonly<CookieRef<number>>>()
+    expectTypeOf(useCookie<number>('test', legacyCookieSerializer)).toEqualTypeOf<CookieRef<number>>()
+    expectTypeOf(useCookie<{ a: number }>('test', { ...legacyCookieSerializer, default: () => ({ a: 1 }) })).toEqualTypeOf<CookieRef<{ a: number }>>()
+    expectTypeOf(useCookie('test', { $cookie: $cookie.create({ decode: Number }), default: () => 500 })).toEqualTypeOf<CookieRef<number>>()
+
+    // @ts-expect-error read back as a string
+    createUseCookie()('test', { default: () => 500 })
+    // @ts-expect-error read back as a string
+    createUseCookie({ maxAge: 60 })<number>('test')
+    expectTypeOf(createUseCookie({ decode: Number })('test')).toEqualTypeOf<CookieRef<number>>()
+    expectTypeOf(createUseCookie(legacyCookieSerializer)<number>('test')).toEqualTypeOf<CookieRef<number>>()
+
+    // @ts-expect-error read back as a string
+    $cookie.get('test', { default: () => 500 })
+    // @ts-expect-error read back as a string
+    $cookie.get<number>('test')
+    // @ts-expect-error read back as a string
+    $cookie.create({ maxAge: 60 }).get('test', { default: () => 500 })
+    expectTypeOf($cookie.create({ decode: Number }).get('test', { default: () => 500 })).toEqualTypeOf<number>()
+    expectTypeOf($cookie.create(legacyCookieSerializer).get('test', { default: () => 500 })).toEqualTypeOf<number>()
   })
 
   it('enforces readonly cookies', () => {
